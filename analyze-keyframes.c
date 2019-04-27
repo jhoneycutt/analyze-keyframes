@@ -19,6 +19,8 @@
 #include <string.h>
 #include <inttypes.h>
 
+#define UNUSED_PARAM(x) (void)(x);
+
 // print out the steps and errors
 static void logging(const char *fmt, ...);
 // decode packets into frames
@@ -28,6 +30,8 @@ static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, 
 
 int main(int argc, const char *argv[])
 {
+  UNUSED_PARAM(argc);
+
   logging("initializing all the containers, codecs and protocols.");
 
   // AVFormatContext holds the header information from the format (Container)
@@ -81,7 +85,7 @@ int main(int argc, const char *argv[])
   int video_stream_index = -1;
 
   // loop though all the streams and print its main information
-  for (int i = 0; i < pFormatContext->nb_streams; i++)
+  for (unsigned i = 0; i < pFormatContext->nb_streams; i++)
   {
     AVCodecParameters *pLocalCodecParameters =  NULL;
     pLocalCodecParameters = pFormatContext->streams[i]->codecpar;
