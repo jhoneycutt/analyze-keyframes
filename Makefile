@@ -1,5 +1,5 @@
-CC = gcc
-CFLAGS = -std=c99 -Werror -Wall -Wextra -Wpedantic
+CC = g++
+CFLAGS = -Werror -Wall -Wextra -Wpedantic
 CFLAGS_DEBUG = -g -O0
 CFLAGS_RELEASE = -O3
 LDFLAGS = -lavformat -lavcodec -lavutil -lz -lm -lpthread -lbz2 -llzma -lswresample
@@ -14,10 +14,10 @@ debug: $(EXE_DEBUG)
 
 release: $(EXE)
 
-$(EXE): analyze-keyframes.c
+$(EXE): analyze-keyframes.cpp
 	$(CC) $(CFLAGS) $(CFLAGS_RELEASE) -o $@ $< $(LDFLAGS)
 
-$(EXE_DEBUG): analyze-keyframes.c
+$(EXE_DEBUG): analyze-keyframes.cpp
 	$(CC) $(CFLAGS) $(CFLAGS_DEBUG) -o $@ $< $(LDFLAGS)
 
 clean:

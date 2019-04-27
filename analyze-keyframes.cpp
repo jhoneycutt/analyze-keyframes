@@ -11,13 +11,18 @@
  * Frame - a decoded raw frame (to be encoded or filtered).
  */
 
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+
+extern "C" {
+
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+
+}
 
 #define UNUSED_PARAM(x) (void)(x);
 
@@ -207,7 +212,7 @@ static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFra
   int response = avcodec_send_packet(pCodecContext, pPacket);
 
   if (response < 0) {
-    logging("Error while sending a packet to the decoder: %s", av_err2str(response));
+    logging("Error while sending a packet to the decoder: %d", response);
     return response;
   }
 
@@ -219,7 +224,7 @@ static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFra
     if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
       break;
     } else if (response < 0) {
-      logging("Error while receiving a frame from the decoder: %s", av_err2str(response));
+      logging("Error while receiving a frame from the decoder: %d", response);
       return response;
     }
 
