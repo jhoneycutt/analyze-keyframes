@@ -113,32 +113,34 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-    // https://ffmpeg.org/doxygen/trunk/structAVFrame.html
-    AVFrame* frame = av_frame_alloc();
-
-    // https://ffmpeg.org/doxygen/trunk/structAVPacket.html
-    AVPacket* packet = av_packet_alloc();
-
-    int response = 0;
-
+    // Skip non-keyframes when processing.
     codecContext->skip_frame = AVDISCARD_NONKEY;
 
-    // fill the Packet with data from the Stream
-    // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga4fdb3084415a82e3810de6ee60e46a61
-    while (av_read_frame(formatContext, packet) >= 0) {
+    AVFrame* frame = av_frame_alloc();
+    AVPacket* packet = av_packet_alloc();
+    while (true) {
+        result = av_read_frame(formatContext, packet);
+        if (result == AVERROR_EOF) {
+            // If we reach the end of the stream, exit cleanly.
+            break;
+        }
+
+        if (result < 0) {
+            logging("Error: Failed to read packet from stream: %s", AVError(result));
+            break;
+        }
+
         if (packet->stream_index != videoStreamIndex)
             continue;
 
         logging("AVPacket->pts %" PRId64, packet->pts);
-        response = decodePacket(packet, codecContext, frame);
-        if (response < 0)
+        result = decodePacket(packet, codecContext, frame);
+        if (result < 0)
             break;
 
-        // https://ffmpeg.org/doxygen/trunk/group__lavc__packet.html#ga63d5a489b419bd5d45cfd09091cbcbc2
+        // Reset the packet for reuse.
         av_packet_unref(packet);
     }
-
-    logging("releasing all the resources");
 
     avformat_close_input(&formatContext);
     avformat_free_context(formatContext);
