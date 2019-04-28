@@ -72,6 +72,7 @@ int main(int argc, const char* argv[])
         }
 
         if (!videoCodec && codecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
+            // FIXME: Is it possible to have multiple video streams? What should the behavior be in that case?
             videoStreamIndex = i;
             videoCodec = codec;
             videoCodecParameters = codecParameters;
