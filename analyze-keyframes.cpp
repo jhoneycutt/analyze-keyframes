@@ -1,15 +1,15 @@
 /*
- * http://ffmpeg.org/doxygen/trunk/index.html
+ * analyze-keyframes:
+ *   A program that uses the libraries provided by ffmpeg to analyze
+ *   keyframes from a video file.
  *
- * Main components
+ *  Copyright:
+ *    Leandro Moreira (2017) <https://github.com/leandromoreira>>
+ *    Jon Honeycutt   (2019) <jhoneycutt@gmail.com>
  *
- * Format (Container) - a wrapper, providing sync, metadata and muxing for the streams.
- * Stream - a continuous stream (audio or video) of data over time.
- * Codec  - defines how data are enCOded (from Frame to Packet)
- *          and DECoded (from Packet to Frame).
- * Packet - are the data (kind of slices of the stream data) to be decoded as raw frames.
- * Frame  - a decoded raw frame (to be encoded or filtered).
-*/
+ *  License:
+ *    BSD 3-clause; see LICENSE.
+ */
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -176,7 +176,7 @@ int main(int argc, const char* argv[])
             continue;
 
         logging("AVPacket->pts %" PRId64, pPacket->pts);
-        response = decode_packet(pPacket, pCodecContext, pFrame);
+        response = decodePacket(packet, codecContext, frame);
         if (response < 0)
             break;
 

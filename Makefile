@@ -1,5 +1,5 @@
 CC = g++
-CFLAGS = -Werror -Wall -Wextra -Wpedantic
+CFLAGS = -std=c++11 -Werror -Wall -Wextra -Wpedantic
 CFLAGS_DEBUG = -g -O0
 CFLAGS_RELEASE = -O3
 LDFLAGS = -lavformat -lavcodec -lavutil -lz -lm -lpthread -lbz2 -llzma -lswresample
