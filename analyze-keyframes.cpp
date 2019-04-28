@@ -47,23 +47,12 @@ int main(int argc, const char* argv[])
 
     auto inputFile = argv[1];
 
-    logging("initializing all the containers, codecs and protocols.");
-
-    // AVFormatContext holds the header information from the format (Container)
-    // Allocating memory for this component
-    // http://ffmpeg.org/doxygen/trunk/structAVFormatContext.html
     AVFormatContext* formatContext = avformat_alloc_context();
 
-    logging("opening the input file (%s) and loading format (container) header", inputFile);
-    // Open the file and read its header. The codecs are not opened.
-    // The function arguments are:
-    // AVFormatContext (the component we allocated memory for),
-    // url (filename),
-    // AVInputFormat (if you pass NULL it'll do the auto detect)
-    // and AVDictionary (which are options to the demuxer)
-    // http://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga31d601155e9035d5b0e7efedc894ee49
-    if (avformat_open_input(&formatContext, inputFile, NULL, NULL) != 0) {
-        logging("ERROR could not open the file");
+    logging("Opening input file %s...", inputFile);
+    int result = avformat_open_input(&formatContext, inputFile, NULL, NULL);
+    if (result) {
+        logging("Error: Failed to open input file: %s", AVError(result));
         return -1;
     }
 
