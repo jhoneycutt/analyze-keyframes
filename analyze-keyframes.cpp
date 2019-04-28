@@ -188,6 +188,8 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
         snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
         outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], width, height, frameFilename);
 
+        // It's necessary to manually free the data pointer after calling av_image_alloc. See
+        // <https://ffmpeg.org/doxygen/4.1/group__lavu__picture.html#ga841e0a89a642e24141af1918a2c10448>.
         av_freep(&frameGrayscale->data[0]);
     }
 
