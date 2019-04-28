@@ -64,65 +64,55 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-    // the component that knows how to enCOde and DECode the stream
-    // it's the codec (audio or video)
-    // http://ffmpeg.org/doxygen/trunk/structAVCodec.html
-    AVCodec* codec = NULL;
-    // this component describes the properties of a codec used by the stream i
-    // https://ffmpeg.org/doxygen/trunk/structAVCodecParameters.html
-    AVCodecParameters* codecParameters = NULL;
-    int video_stream_index = -1;
+    AVCodec* videoCodec = nullptr;
+    AVCodecParameters* videoCodecParameters = nullptr;
+    int videoStreamIndex;
 
-    // loop though all the streams and print its main information
+    // Loop though all streams, and print some information about them.
     for (unsigned i = 0; i < formatContext->nb_streams; i++) {
-        AVCodecParameters* localCodecParameters = NULL;
-        localCodecParameters = formatContext->streams[i]->codecpar;
-        logging("AVStream->time_base before open coded %d/%d", formatContext->streams[i]->time_base.num, formatContext->streams[i]->time_base.den);
-        logging("AVStream->r_frame_rate before open coded %d/%d", formatContext->streams[i]->r_frame_rate.num, formatContext->streams[i]->r_frame_rate.den);
-        logging("AVStream->start_time %" PRId64, formatContext->streams[i]->start_time);
-        logging("AVStream->duration %" PRId64, formatContext->streams[i]->duration);
+        AVStream* stream = formatContext->streams[i];
+        logging("Stream #%u", i);
+        logging("    AVStream->time_base before open coded %d/%d", stream->time_base.num, stream->time_base.den);
+        logging("    AVStream->r_frame_rate before open coded %d/%d", stream->r_frame_rate.num, stream->r_frame_rate.den);
+        logging("    AVStream->start_time %" PRId64, stream->start_time);
+        logging("    AVStream->duration %" PRId64, stream->duration);
 
-        logging("finding the proper decoder (CODEC)");
-
-        AVCodec* localCodec = NULL;
-
-        // finds the registered decoder for a codec ID
-        // https://ffmpeg.org/doxygen/trunk/group__lavc__decoding.html#ga19a0ca553277f019dd5b0fec6e1f9dca
-        localCodec = avcodec_find_decoder(localCodecParameters->codec_id);
-
-        if (localCodec == NULL) {
-            logging("ERROR unsupported codec!");
-            return -1;
+        AVCodecParameters* codecParameters = stream->codecpar;
+        AVCodec* codec = avcodec_find_decoder(codecParameters->codec_id);
+        if (!codec) {
+            logging("Error: No codec found for stream.");
+            continue;
         }
 
-        // when the stream is a video we store its index, codec parameters and codec
-        if (localCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
-            video_stream_index = i;
-            codec = localCodec;
-            codecParameters = localCodecParameters;
+        if (!videoCodec && codecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
+            videoStreamIndex = i;
+            videoCodec = codec;
+            videoCodecParameters = codecParameters;
+            logging("    Video Codec: resolution %d x %d", codecParameters->width, codecParameters->height);
+        } else if (codecParameters->codec_type == AVMEDIA_TYPE_AUDIO)
+            logging("    Audio Codec: %d channels, sample rate %d", codecParameters->channels, codecParameters->sample_rate);
 
-            logging("Video Codec: resolution %d x %d", localCodecParameters->width, localCodecParameters->height);
-        }
-        else if (localCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
-            logging("Audio Codec: %d channels, sample rate %d", localCodecParameters->channels, localCodecParameters->sample_rate);
-        }
-
-        // print its name, id and bitrate
-        logging("\tCodec %s ID %d bit_rate %lld", localCodec->name, localCodec->id, localCodecParameters->bit_rate);
+        logging("        Codec %s ID %d bit_rate %lld", codec->name, codec->id, codecParameters->bit_rate);
     }
+
+    if (!videoCodec) {
+        logging("Error: Failed to find a decodable video stream in input file.");
+        return -1;
+    }
+
     // https://ffmpeg.org/doxygen/trunk/structAVCodecContext.html
-    AVCodecContext* codecContext = avcodec_alloc_context3(codec);
+    AVCodecContext* codecContext = avcodec_alloc_context3(videoCodec);
 
     // Fill the codec context based on the values from the supplied codec parameters
     // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#gac7b282f51540ca7a99416a3ba6ee0d16
-    if (avcodec_parameters_to_context(codecContext, codecParameters) < 0) {
+    if (avcodec_parameters_to_context(codecContext, videoCodecParameters) < 0) {
         logging("failed to copy codec params to codec context");
         return -1;
     }
 
     // Initialize the AVCodecContext to use the given AVCodec.
     // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#ga11f785a188d7d9df71621001465b0f1d
-    if (avcodec_open2(codecContext, codec, NULL) < 0) {
+    if (avcodec_open2(codecContext, videoCodec, NULL) < 0) {
         logging("failed to open codec through avcodec_open2");
         return -1;
     }
@@ -140,7 +130,7 @@ int main(int argc, const char* argv[])
     // fill the Packet with data from the Stream
     // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga4fdb3084415a82e3810de6ee60e46a61
     while (av_read_frame(formatContext, packet) >= 0) {
-        if (packet->stream_index != video_stream_index)
+        if (packet->stream_index != videoStreamIndex)
             continue;
 
         logging("AVPacket->pts %" PRId64, packet->pts);
