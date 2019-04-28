@@ -128,8 +128,10 @@ int main(int argc, const char* argv[])
             continue;
 
         result = decodePacket(packet.get(), codecContext.get(), frame.get());
-        if (result < 0)
-            break;
+        if (result < 0) {
+            logging("Error: Failed to process packet.");
+            return -1;
+        }
 
         // Reset the packet for reuse.
         av_packet_unref(packet.get());
