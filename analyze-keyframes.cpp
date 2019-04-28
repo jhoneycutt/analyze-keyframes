@@ -56,22 +56,11 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-    // now we have access to some information about our file
-    // since we read its header we can say what format (container) it's
-    // and some other information related to the format itself.
-    logging("format %s, duration %lld us, bit_rate %lld", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
+    logging("    Format %s, duration %lld us, bit_rate %lld", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
 
-    logging("finding stream info from format");
-    // read Packets from the Format to get stream information
-    // this function populates formatContext->streams
-    // (of size equals to formatContext->nb_streams)
-    // the arguments are:
-    // the AVFormatContext
-    // and options contains options for codec corresponding to i-th stream.
-    // On return each dictionary will be filled with options that were not found.
-    // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#gad42172e27cddafb81096939783b157bb
-    if (avformat_find_stream_info(formatContext, NULL) < 0) {
-        logging("ERROR could not get the stream info");
+    result = avformat_find_stream_info(formatContext, NULL);
+    if (result) {
+        logging("Error: Failed to find stream info: %s", AVError(result));
         return -1;
     }
 
