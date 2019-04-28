@@ -47,8 +47,8 @@ int main(int argc, const char* argv[])
     // AVFormatContext holds the header information from the format (Container)
     // Allocating memory for this component
     // http://ffmpeg.org/doxygen/trunk/structAVFormatContext.html
-    AVFormatContext* pFormatContext = avformat_alloc_context();
-    if (!pFormatContext) {
+    AVFormatContext* formatContext = avformat_alloc_context();
+    if (!formatContext) {
         logging("ERROR could not allocate memory for Format Context");
         return -1;
     }
@@ -61,7 +61,7 @@ int main(int argc, const char* argv[])
     // AVInputFormat (if you pass NULL it'll do the auto detect)
     // and AVDictionary (which are options to the demuxer)
     // http://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga31d601155e9035d5b0e7efedc894ee49
-    if (avformat_open_input(&pFormatContext, argv[1], NULL, NULL) != 0) {
+    if (avformat_open_input(&formatContext, argv[1], NULL, NULL) != 0) {
         logging("ERROR could not open the file");
         return -1;
     }
@@ -69,18 +69,18 @@ int main(int argc, const char* argv[])
     // now we have access to some information about our file
     // since we read its header we can say what format (container) it's
     // and some other information related to the format itself.
-    logging("format %s, duration %lld us, bit_rate %lld", pFormatContext->iformat->name, pFormatContext->duration, pFormatContext->bit_rate);
+    logging("format %s, duration %lld us, bit_rate %lld", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
 
     logging("finding stream info from format");
     // read Packets from the Format to get stream information
-    // this function populates pFormatContext->streams
-    // (of size equals to pFormatContext->nb_streams)
+    // this function populates formatContext->streams
+    // (of size equals to formatContext->nb_streams)
     // the arguments are:
     // the AVFormatContext
     // and options contains options for codec corresponding to i-th stream.
     // On return each dictionary will be filled with options that were not found.
     // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#gad42172e27cddafb81096939783b157bb
-    if (avformat_find_stream_info(pFormatContext, NULL) < 0) {
+    if (avformat_find_stream_info(formatContext, NULL) < 0) {
         logging("ERROR could not get the stream info");
         return -1;
     }
@@ -88,109 +88,109 @@ int main(int argc, const char* argv[])
     // the component that knows how to enCOde and DECode the stream
     // it's the codec (audio or video)
     // http://ffmpeg.org/doxygen/trunk/structAVCodec.html
-    AVCodec* pCodec = NULL;
+    AVCodec* codec = NULL;
     // this component describes the properties of a codec used by the stream i
     // https://ffmpeg.org/doxygen/trunk/structAVCodecParameters.html
-    AVCodecParameters* pCodecParameters = NULL;
+    AVCodecParameters* codecParameters = NULL;
     int video_stream_index = -1;
 
     // loop though all the streams and print its main information
-    for (unsigned i = 0; i < pFormatContext->nb_streams; i++) {
-        AVCodecParameters* pLocalCodecParameters = NULL;
-        pLocalCodecParameters = pFormatContext->streams[i]->codecpar;
-        logging("AVStream->time_base before open coded %d/%d", pFormatContext->streams[i]->time_base.num, pFormatContext->streams[i]->time_base.den);
-        logging("AVStream->r_frame_rate before open coded %d/%d", pFormatContext->streams[i]->r_frame_rate.num, pFormatContext->streams[i]->r_frame_rate.den);
-        logging("AVStream->start_time %" PRId64, pFormatContext->streams[i]->start_time);
-        logging("AVStream->duration %" PRId64, pFormatContext->streams[i]->duration);
+    for (unsigned i = 0; i < formatContext->nb_streams; i++) {
+        AVCodecParameters* localCodecParameters = NULL;
+        localCodecParameters = formatContext->streams[i]->codecpar;
+        logging("AVStream->time_base before open coded %d/%d", formatContext->streams[i]->time_base.num, formatContext->streams[i]->time_base.den);
+        logging("AVStream->r_frame_rate before open coded %d/%d", formatContext->streams[i]->r_frame_rate.num, formatContext->streams[i]->r_frame_rate.den);
+        logging("AVStream->start_time %" PRId64, formatContext->streams[i]->start_time);
+        logging("AVStream->duration %" PRId64, formatContext->streams[i]->duration);
 
         logging("finding the proper decoder (CODEC)");
 
-        AVCodec* pLocalCodec = NULL;
+        AVCodec* localCodec = NULL;
 
         // finds the registered decoder for a codec ID
         // https://ffmpeg.org/doxygen/trunk/group__lavc__decoding.html#ga19a0ca553277f019dd5b0fec6e1f9dca
-        pLocalCodec = avcodec_find_decoder(pLocalCodecParameters->codec_id);
+        localCodec = avcodec_find_decoder(localCodecParameters->codec_id);
 
-        if (pLocalCodec == NULL) {
+        if (localCodec == NULL) {
             logging("ERROR unsupported codec!");
             return -1;
         }
 
         // when the stream is a video we store its index, codec parameters and codec
-        if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (localCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
             video_stream_index = i;
-            pCodec = pLocalCodec;
-            pCodecParameters = pLocalCodecParameters;
+            codec = localCodec;
+            codecParameters = localCodecParameters;
 
-            logging("Video Codec: resolution %d x %d", pLocalCodecParameters->width, pLocalCodecParameters->height);
+            logging("Video Codec: resolution %d x %d", localCodecParameters->width, localCodecParameters->height);
         }
-        else if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
-            logging("Audio Codec: %d channels, sample rate %d", pLocalCodecParameters->channels, pLocalCodecParameters->sample_rate);
+        else if (localCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
+            logging("Audio Codec: %d channels, sample rate %d", localCodecParameters->channels, localCodecParameters->sample_rate);
         }
 
         // print its name, id and bitrate
-        logging("\tCodec %s ID %d bit_rate %lld", pLocalCodec->name, pLocalCodec->id, pLocalCodecParameters->bit_rate);
+        logging("\tCodec %s ID %d bit_rate %lld", localCodec->name, localCodec->id, localCodecParameters->bit_rate);
     }
     // https://ffmpeg.org/doxygen/trunk/structAVCodecContext.html
-    AVCodecContext* pCodecContext = avcodec_alloc_context3(pCodec);
-    if (!pCodecContext) {
+    AVCodecContext* codecContext = avcodec_alloc_context3(codec);
+    if (!codecContext) {
         logging("failed to allocated memory for AVCodecContext");
         return -1;
     }
 
     // Fill the codec context based on the values from the supplied codec parameters
     // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#gac7b282f51540ca7a99416a3ba6ee0d16
-    if (avcodec_parameters_to_context(pCodecContext, pCodecParameters) < 0) {
+    if (avcodec_parameters_to_context(codecContext, codecParameters) < 0) {
         logging("failed to copy codec params to codec context");
         return -1;
     }
 
     // Initialize the AVCodecContext to use the given AVCodec.
     // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#ga11f785a188d7d9df71621001465b0f1d
-    if (avcodec_open2(pCodecContext, pCodec, NULL) < 0) {
+    if (avcodec_open2(codecContext, codec, NULL) < 0) {
         logging("failed to open codec through avcodec_open2");
         return -1;
     }
 
     // https://ffmpeg.org/doxygen/trunk/structAVFrame.html
-    AVFrame* pFrame = av_frame_alloc();
-    if (!pFrame) {
+    AVFrame* frame = av_frame_alloc();
+    if (!frame) {
         logging("failed to allocated memory for AVFrame");
         return -1;
     }
     // https://ffmpeg.org/doxygen/trunk/structAVPacket.html
-    AVPacket* pPacket = av_packet_alloc();
-    if (!pPacket) {
+    AVPacket* packet = av_packet_alloc();
+    if (!packet) {
         logging("failed to allocated memory for AVPacket");
         return -1;
     }
 
     int response = 0;
 
-    pCodecContext->skip_frame = AVDISCARD_NONKEY;
+    codecContext->skip_frame = AVDISCARD_NONKEY;
 
     // fill the Packet with data from the Stream
     // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga4fdb3084415a82e3810de6ee60e46a61
-    while (av_read_frame(pFormatContext, pPacket) >= 0) {
-        if (pPacket->stream_index != video_stream_index)
+    while (av_read_frame(formatContext, packet) >= 0) {
+        if (packet->stream_index != video_stream_index)
             continue;
 
-        logging("AVPacket->pts %" PRId64, pPacket->pts);
+        logging("AVPacket->pts %" PRId64, packet->pts);
         response = decodePacket(packet, codecContext, frame);
         if (response < 0)
             break;
 
         // https://ffmpeg.org/doxygen/trunk/group__lavc__packet.html#ga63d5a489b419bd5d45cfd09091cbcbc2
-        av_packet_unref(pPacket);
+        av_packet_unref(packet);
     }
 
     logging("releasing all the resources");
 
-    avformat_close_input(&pFormatContext);
-    avformat_free_context(pFormatContext);
-    av_packet_free(&pPacket);
-    av_frame_free(&pFrame);
-    avcodec_free_context(&pCodecContext);
+    avformat_close_input(&formatContext);
+    avformat_free_context(formatContext);
+    av_packet_free(&packet);
+    av_frame_free(&frame);
+    avcodec_free_context(&codecContext);
     return 0;
 }
 
