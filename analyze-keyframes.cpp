@@ -22,13 +22,7 @@
 static void logging(const char* format, ...);
 static bool processPacket(const AVPacket*, AVCodecContext*);
 static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
-
-static const char* AVError(int code)
-{
-    static char errorString[AV_ERROR_MAX_STRING_SIZE];
-    av_make_error_string(errorString, AV_ERROR_MAX_STRING_SIZE, code);
-    return errorString;
-}
+static const char* AVError(int errorCode);
 
 int main(int argc, const char* argv[])
 {
@@ -47,7 +41,6 @@ int main(int argc, const char* argv[])
         logging("Error: Failed to open input file: %s", AVError(result));
         return -1;
     }
-
 
     logging("    Format %s, duration %lld us, bit_rate %lld\n", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
 
@@ -133,6 +126,13 @@ int main(int argc, const char* argv[])
     }
 
     return 0;
+}
+
+static const char* AVError(int errorCode)
+{
+    static char errorString[AV_ERROR_MAX_STRING_SIZE];
+    av_make_error_string(errorString, AV_ERROR_MAX_STRING_SIZE, errorCode);
+    return errorString;
 }
 
 static void logging(const char* fmt, ...)
