@@ -40,7 +40,12 @@ static const char* AVError(int code)
 
 int main(int argc, const char* argv[])
 {
-    UNUSED_PARAM(argc);
+    if (argc < 2) {
+        logging("Usage: %s <video file>\n", argv[0]);
+        return -1;
+    }
+
+    auto inputFile = argv[1];
 
     logging("initializing all the containers, codecs and protocols.");
 
@@ -49,7 +54,7 @@ int main(int argc, const char* argv[])
     // http://ffmpeg.org/doxygen/trunk/structAVFormatContext.html
     AVFormatContext* formatContext = avformat_alloc_context();
 
-    logging("opening the input file (%s) and loading format (container) header", argv[1]);
+    logging("opening the input file (%s) and loading format (container) header", inputFile);
     // Open the file and read its header. The codecs are not opened.
     // The function arguments are:
     // AVFormatContext (the component we allocated memory for),
@@ -57,7 +62,7 @@ int main(int argc, const char* argv[])
     // AVInputFormat (if you pass NULL it'll do the auto detect)
     // and AVDictionary (which are options to the demuxer)
     // http://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga31d601155e9035d5b0e7efedc894ee49
-    if (avformat_open_input(&formatContext, argv[1], NULL, NULL) != 0) {
+    if (avformat_open_input(&formatContext, inputFile, NULL, NULL) != 0) {
         logging("ERROR could not open the file");
         return -1;
     }
