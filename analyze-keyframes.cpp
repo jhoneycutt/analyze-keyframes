@@ -100,20 +100,16 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-    // https://ffmpeg.org/doxygen/trunk/structAVCodecContext.html
     AVCodecContext* codecContext = avcodec_alloc_context3(videoCodec);
-
-    // Fill the codec context based on the values from the supplied codec parameters
-    // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#gac7b282f51540ca7a99416a3ba6ee0d16
-    if (avcodec_parameters_to_context(codecContext, videoCodecParameters) < 0) {
-        logging("failed to copy codec params to codec context");
-        return -1;
+    result = avcodec_parameters_to_context(codecContext, videoCodecParameters);
+    if (result < 0) {
+        logging("Error: Failed to copy codec parameters to codec context: %s", AVError(result));
+         return -1;
     }
 
-    // Initialize the AVCodecContext to use the given AVCodec.
-    // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#ga11f785a188d7d9df71621001465b0f1d
-    if (avcodec_open2(codecContext, videoCodec, NULL) < 0) {
-        logging("failed to open codec through avcodec_open2");
+    result = avcodec_open2(codecContext, videoCodec, NULL);
+    if (result < 0) {
+        logging("Error: Failed to open codec: %s", AVError(result));
         return -1;
     }
 
