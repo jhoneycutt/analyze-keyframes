@@ -162,21 +162,22 @@ int main(int argc, const char* argv[])
     }
 
     int response = 0;
-    int how_many_packets_to_process = 8;
 
     // fill the Packet with data from the Stream
     // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga4fdb3084415a82e3810de6ee60e46a61
     while (av_read_frame(pFormatContext, pPacket) >= 0) {
         // if it's the video stream
-        if (pPacket->stream_index == video_stream_index) {
-            logging("AVPacket->pts %" PRId64, pPacket->pts);
-            response = decode_packet(pPacket, pCodecContext, pFrame);
-            if (response < 0)
-                break;
-            // stop it, otherwise we'll be saving hundreds of frames
-            if (--how_many_packets_to_process <= 0)
-                break;
-        }
+        if (!(pPacket->flags & AV_PKT_FLAG_KEY))
+            continue;
+
+        if (pPacket->stream_index != video_stream_index)
+            continue;
+
+        logging("AVPacket->pts %" PRId64, pPacket->pts);
+        response = decode_packet(pPacket, pCodecContext, pFrame);
+        if (response < 0)
+            break;
+
         // https://ffmpeg.org/doxygen/trunk/group__lavc__packet.html#ga63d5a489b419bd5d45cfd09091cbcbc2
         av_packet_unref(pPacket);
     }
