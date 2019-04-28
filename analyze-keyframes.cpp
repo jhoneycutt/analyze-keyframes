@@ -163,13 +163,11 @@ int main(int argc, const char* argv[])
 
     int response = 0;
 
+    pCodecContext->skip_frame = AVDISCARD_NONKEY;
+
     // fill the Packet with data from the Stream
     // https://ffmpeg.org/doxygen/trunk/group__lavf__decoding.html#ga4fdb3084415a82e3810de6ee60e46a61
     while (av_read_frame(pFormatContext, pPacket) >= 0) {
-        // if it's the video stream
-        if (!(pPacket->flags & AV_PKT_FLAG_KEY))
-            continue;
-
         if (pPacket->stream_index != video_stream_index)
             continue;
 
