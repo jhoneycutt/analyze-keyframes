@@ -20,7 +20,7 @@
 #include <inttypes.h>
 
 static void logging(const char* format, ...);
-static int decodePacket(const AVPacket*, AVCodecContext*, AVFrame*);
+static bool processPacket(const AVPacket*, AVCodecContext*, AVFrame*);
 static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
 
 static const char* AVError(int code)
@@ -127,8 +127,7 @@ int main(int argc, const char* argv[])
         if (packet->stream_index != videoStreamIndex)
             continue;
 
-        result = decodePacket(packet.get(), codecContext.get(), frame.get());
-        if (result < 0) {
+        if (!processPacket(packet.get(), codecContext.get(), frame.get())) {
             logging("Error: Failed to process packet.");
             return -1;
         }
@@ -149,12 +148,12 @@ static void logging(const char* fmt, ...)
     fprintf(stderr, "\n");
 }
 
-static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AVFrame* frame)
+static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, AVFrame* frame)
 {
     int result = avcodec_send_packet(codecContext, packet);
     if (result < 0) {
         logging("Error: Failed sending packet to the decoder: %s", AVError(result));
-        return result;
+        return false;
     }
 
     AVFramePtr frameGrayscale(av_frame_alloc());
@@ -163,17 +162,17 @@ static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AV
         // the next frame. If it returns EOF, we've reached the end of the stream.
         result = avcodec_receive_frame(codecContext, frame);
         if (result == AVERROR(EAGAIN) || result == AVERROR_EOF)
-            return 0;
+            return true;
 
         if (result < 0) {
             logging("Error: Failed to receive a frame from the decoder: %s", AVError(result));
-            return result;
+            return false;
         }
 
         result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, frame->width, frame->height, AV_PIX_FMT_GRAY8, 32);
         if (result < 0) {
             logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
-            return result;
+            return false;
         }
 
         logging("Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]", codecContext->frame_number, av_get_picture_type_char(frame->pict_type), frame->pkt_size, frame->pts, frame->key_frame, frame->coded_picture_number);
@@ -196,7 +195,7 @@ static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AV
         av_frame_unref(frameGrayscale.get());
     }
 
-    return 0;
+    return true;
 }
 
 static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename)
