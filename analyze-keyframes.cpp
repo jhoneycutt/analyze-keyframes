@@ -27,12 +27,16 @@ extern "C"
 
 #define UNUSED_PARAM(x) (void)(x);
 
-// print out the steps and errors
-static void logging(const char* fmt, ...);
-// decode packets into frames
-static int decode_packet(AVPacket* pPacket, AVCodecContext* pCodecContext, AVFrame* pFrame);
-// save a frame into a .pgm file
-static void save_gray_frame(unsigned char* buf, int wrap, int xsize, int ysize, char* filename);
+static void logging(const char* format, ...);
+static int decodePacket(const AVPacket*, AVCodecContext*, AVFrame*);
+static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
+
+static const char* AVError(int code)
+{
+    static char errorString[AV_ERROR_MAX_STRING_SIZE];
+    av_make_error_string(errorString, AV_ERROR_MAX_STRING_SIZE, code);
+    return errorString;
+}
 
 int main(int argc, const char* argv[])
 {
@@ -193,61 +197,62 @@ int main(int argc, const char* argv[])
 static void logging(const char* fmt, ...)
 {
     va_list args;
-    fprintf(stderr, "LOG: ");
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);
     va_end(args);
     fprintf(stderr, "\n");
 }
 
-static int decode_packet(AVPacket* pPacket, AVCodecContext* pCodecContext, AVFrame* pFrame)
+static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AVFrame* frame)
 {
-    // Supply raw packet data as input to a decoder
-    // https://ffmpeg.org/doxygen/trunk/group__lavc__decoding.html#ga58bc4bf1e0ac59e27362597e467efff3
-    int response = avcodec_send_packet(pCodecContext, pPacket);
-
-    if (response < 0) {
-        logging("Error while sending a packet to the decoder: %d", response);
-        return response;
+    int result = avcodec_send_packet(codecContext, packet);
+    if (result < 0) {
+        logging("Error: Failed sending packet to the decoder: %s", AVError(result));
+        return result;
     }
 
-    while (response >= 0) {
-        // Return decoded output data (into a frame) from a decoder
-        // https://ffmpeg.org/doxygen/trunk/group__lavc__decoding.html#ga11e6542c4e66d3028668788a1a74217c
-        response = avcodec_receive_frame(pCodecContext, pFrame);
-        if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
-            break;
-        }
-        else if (response < 0) {
-            logging("Error while receiving a frame from the decoder: %d", response);
-            return response;
+    while (true) {
+        // Process a single frame from the decoder. If the decoder returns EAGAIN, more input data is needed to decode 
+        // the next frame. If it returns EOF, we've reached the end of the stream.
+        result = avcodec_receive_frame(codecContext, frame);
+        if (result == AVERROR(EAGAIN) || result == AVERROR_EOF)
+            return 0;
+
+        if (result < 0) {
+            logging("Error: Failed to receive a frame from the decoder: %s", AVError(result));
+            return result;
         }
 
-        if (response >= 0) {
-            logging("Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]", pCodecContext->frame_number, av_get_picture_type_char(pFrame->pict_type), pFrame->pkt_size, pFrame->pts, pFrame->key_frame, pFrame->coded_picture_number);
+        logging("Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]", codecContext->frame_number, av_get_picture_type_char(frame->pict_type), frame->pkt_size, frame->pts, frame->key_frame, frame->coded_picture_number);
 
-            char frame_filename[1024];
-            snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecContext->frame_number);
-            // save a grayscale frame into a .pgm file
-            save_gray_frame(pFrame->data[0], pFrame->linesize[0], pFrame->width, pFrame->height, frame_filename);
+        char frameFilename[1024];
+        snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
 
-            av_frame_unref(pFrame);
-        }
+        if (!outputGrayscaleKeyframe(frame->data[0], frame->linesize[0], frame->width, frame->height, frameFilename))
+            logging("Error: Failed to write frame contents to %s.", frameFilename);
+
+        av_frame_unref(frame);
     }
     return 0;
 }
 
-static void save_gray_frame(unsigned char* buf, int wrap, int xsize, int ysize, char* filename)
+static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename)
 {
-    FILE* f;
-    int i;
-    f = fopen(filename, "w");
-    // writing the minimal required header for a pgm file format
-    // portable graymap format -> https://en.wikipedia.org/wiki/Netpbm_format#PGM_example
-    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
+    FILE* f = fopen(filename, "w");
+    if (!f)
+        return false;
 
-    // writing line by line
-    for (i = 0; i < ysize; i++)
-        fwrite(buf + i * wrap, 1, xsize, f);
+    // For format description, see <https://en.wikipedia.org/wiki/Netpbm_format#PGM_example>
+    fprintf(f, "P5\n%d %d\n%d\n", width, height, 255);
+
+    // We cannot write the entire contents of buffer, because each horizontal line may contain additional padding bytes
+    // for performance reasons. lineSize includes this padding, so use it to determine the start of each row. See
+    // <https://libav.org/documentation/doxygen/master/structAVFrame.html#aa52bfc6605f6a3059a0c3226cc0f6567>.
+    for (int i = 0; i < height; ++i) {
+        auto lineStart = &buffer[i * lineSize * sizeof(buffer[0])];
+        fwrite(lineStart, sizeof(buffer[0]), width, f);
+    }
+
     fclose(f);
+    return true;
 }
