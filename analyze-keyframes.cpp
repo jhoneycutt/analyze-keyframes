@@ -56,7 +56,7 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-    logging("    Format %s, duration %lld us, bit_rate %lld", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
+    logging("    Format %s, duration %lld us, bit_rate %lld\n", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
 
     result = avformat_find_stream_info(formatContext, NULL);
     if (result) {
@@ -76,6 +76,7 @@ int main(int argc, const char* argv[])
         logging("    AVStream->r_frame_rate before open coded %d/%d", stream->r_frame_rate.num, stream->r_frame_rate.den);
         logging("    AVStream->start_time %" PRId64, stream->start_time);
         logging("    AVStream->duration %" PRId64, stream->duration);
+        logging("");
 
         AVCodecParameters* codecParameters = stream->codecpar;
         AVCodec* codec = avcodec_find_decoder(codecParameters->codec_id);
@@ -90,9 +91,9 @@ int main(int argc, const char* argv[])
             videoCodecParameters = codecParameters;
             logging("    Video Codec: resolution %d x %d", codecParameters->width, codecParameters->height);
         } else if (codecParameters->codec_type == AVMEDIA_TYPE_AUDIO)
-            logging("    Audio Codec: %d channels, sample rate %d", codecParameters->channels, codecParameters->sample_rate);
+            logging("    Audio Codec: channels %d, sample rate %d", codecParameters->channels, codecParameters->sample_rate);
 
-        logging("        Codec %s ID %d bit_rate %lld", codec->name, codec->id, codecParameters->bit_rate);
+        logging("        Codec name %s, ID %d, bit_rate %lld\n", codec->name, codec->id, codecParameters->bit_rate);
     }
 
     if (!videoCodec) {
@@ -133,7 +134,6 @@ int main(int argc, const char* argv[])
         if (packet->stream_index != videoStreamIndex)
             continue;
 
-        logging("AVPacket->pts %" PRId64, packet->pts);
         result = decodePacket(packet, codecContext, frame);
         if (result < 0)
             break;
