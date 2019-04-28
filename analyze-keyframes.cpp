@@ -48,10 +48,6 @@ int main(int argc, const char* argv[])
     // Allocating memory for this component
     // http://ffmpeg.org/doxygen/trunk/structAVFormatContext.html
     AVFormatContext* formatContext = avformat_alloc_context();
-    if (!formatContext) {
-        logging("ERROR could not allocate memory for Format Context");
-        return -1;
-    }
 
     logging("opening the input file (%s) and loading format (container) header", argv[1]);
     // Open the file and read its header. The codecs are not opened.
@@ -133,10 +129,6 @@ int main(int argc, const char* argv[])
     }
     // https://ffmpeg.org/doxygen/trunk/structAVCodecContext.html
     AVCodecContext* codecContext = avcodec_alloc_context3(codec);
-    if (!codecContext) {
-        logging("failed to allocated memory for AVCodecContext");
-        return -1;
-    }
 
     // Fill the codec context based on the values from the supplied codec parameters
     // https://ffmpeg.org/doxygen/trunk/group__lavc__core.html#gac7b282f51540ca7a99416a3ba6ee0d16
@@ -154,16 +146,9 @@ int main(int argc, const char* argv[])
 
     // https://ffmpeg.org/doxygen/trunk/structAVFrame.html
     AVFrame* frame = av_frame_alloc();
-    if (!frame) {
-        logging("failed to allocated memory for AVFrame");
-        return -1;
-    }
+
     // https://ffmpeg.org/doxygen/trunk/structAVPacket.html
     AVPacket* packet = av_packet_alloc();
-    if (!packet) {
-        logging("failed to allocated memory for AVPacket");
-        return -1;
-    }
 
     int response = 0;
 
