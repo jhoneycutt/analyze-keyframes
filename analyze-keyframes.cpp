@@ -25,8 +25,6 @@ extern "C"
 
 }
 
-#define UNUSED_PARAM(x) (void)(x);
-
 static void logging(const char* format, ...);
 static int decodePacket(const AVPacket*, AVCodecContext*, AVFrame*);
 static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
@@ -168,7 +166,7 @@ static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AV
     }
 
     while (true) {
-        // Process a single frame from the decoder. If the decoder returns EAGAIN, more input data is needed to decode 
+        // Process a single frame from the decoder. If the decoder returns EAGAIN, more input data is needed to decode
         // the next frame. If it returns EOF, we've reached the end of the stream.
         result = avcodec_receive_frame(codecContext, frame);
         if (result == AVERROR(EAGAIN) || result == AVERROR_EOF)
