@@ -121,7 +121,7 @@ int main(int argc, const char* argv[])
 
         if (result < 0) {
             logging("Error: Failed to read packet from stream: %s", AVError(result));
-            break;
+            return -1;
         }
 
         if (packet->stream_index != videoStreamIndex)
