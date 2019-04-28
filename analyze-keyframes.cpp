@@ -125,7 +125,7 @@ int main(int argc, const char* argv[])
         }
 
         // print its name, id and bitrate
-        logging("\tCodec %s ID %d bit_rate %lld", pLocalCodec->name, pLocalCodec->id, pCodecParameters->bit_rate);
+        logging("\tCodec %s ID %d bit_rate %lld", pLocalCodec->name, pLocalCodec->id, pLocalCodecParameters->bit_rate);
     }
     // https://ffmpeg.org/doxygen/trunk/structAVCodecContext.html
     AVCodecContext* pCodecContext = avcodec_alloc_context3(pCodec);
