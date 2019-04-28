@@ -74,7 +74,7 @@ int main(int argc, const char* argv[])
         AVCodecParameters* codecParameters = stream->codecpar;
         AVCodec* codec = avcodec_find_decoder(codecParameters->codec_id);
         if (!codec) {
-            logging("Error: No codec found for stream.");
+            logging("Warning: No codec found for stream.");
             continue;
         }
 
