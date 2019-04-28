@@ -20,7 +20,7 @@
 #include <inttypes.h>
 
 static void logging(const char* format, ...);
-static bool processPacket(const AVPacket*, AVCodecContext*, AVFrame*);
+static bool processPacket(const AVPacket*, AVCodecContext*);
 static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
 
 static const char* AVError(int code)
@@ -110,9 +110,8 @@ int main(int argc, const char* argv[])
     // Skip non-keyframes when processing.
     codecContext->skip_frame = AVDISCARD_NONKEY;
 
-    AVFramePtr frame(av_frame_alloc());
-    AVPacketPtr packet(av_packet_alloc());
     while (true) {
+        AVPacketPtr packet(av_packet_alloc());
         result = av_read_frame(formatContext.get(), packet.get());
         if (result == AVERROR_EOF) {
             // If we reach the end of the stream, exit cleanly.
@@ -127,13 +126,10 @@ int main(int argc, const char* argv[])
         if (packet->stream_index != videoStreamIndex)
             continue;
 
-        if (!processPacket(packet.get(), codecContext.get(), frame.get())) {
+        if (!processPacket(packet.get(), codecContext.get())) {
             logging("Error: Failed to process packet.");
             return -1;
         }
-
-        // Reset the packet for reuse.
-        av_packet_unref(packet.get());
     }
 
     return 0;
@@ -148,7 +144,7 @@ static void logging(const char* fmt, ...)
     fprintf(stderr, "\n");
 }
 
-static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, AVFrame* frame)
+static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
 {
     int result = avcodec_send_packet(codecContext, packet);
     if (result < 0) {
@@ -156,11 +152,11 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, 
         return false;
     }
 
-    AVFramePtr frameGrayscale(av_frame_alloc());
     while (true) {
         // Process a single frame from the decoder. If the decoder returns EAGAIN, more input data is needed to decode
         // the next frame. If it returns EOF, we've reached the end of the stream.
-        result = avcodec_receive_frame(codecContext, frame);
+        AVFramePtr frame(av_frame_alloc());
+        result = avcodec_receive_frame(codecContext, frame.get());
         if (result == AVERROR(EAGAIN) || result == AVERROR_EOF)
             return true;
 
@@ -169,6 +165,7 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, 
             return false;
         }
 
+        AVFramePtr frameGrayscale(av_frame_alloc());
         result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, frame->width, frame->height, AV_PIX_FMT_GRAY8, 32);
         if (result < 0) {
             logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
@@ -190,9 +187,7 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, 
         snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
         outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], width, height, frameFilename);
 
-        av_frame_unref(frame);
         av_freep(&frameGrayscale->data[0]);
-        av_frame_unref(frameGrayscale.get());
     }
 
     return true;
