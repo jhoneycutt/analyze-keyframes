@@ -13,11 +13,11 @@
 
 #include "analyze-keyframes.h"
 
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
-#include <inttypes.h>
+#include <cinttypes>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 static void logging(const char* format, ...);
 static bool processPacket(const AVPacket*, AVCodecContext*);
