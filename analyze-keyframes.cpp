@@ -59,7 +59,7 @@ int main(int argc, const char* argv[])
 
     AVCodec* videoCodec = nullptr;
     AVCodecParameters* videoCodecParameters = nullptr;
-    int videoStreamIndex;
+    int videoStreamIndex = 0;
 
     // Loop though all streams, and print some information about them.
     for (unsigned i = 0; i < formatContext->nb_streams; i++) {
