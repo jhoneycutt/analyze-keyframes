@@ -27,7 +27,7 @@ static const char* AVError(int errorCode);
 int main(int argc, const char* argv[])
 {
     if (argc < 2) {
-        logging("Usage: %s <video file>\n", argv[0]);
+        logging("Usage: %s <video file>", argv[0]);
         return -1;
     }
 
