@@ -211,7 +211,7 @@ static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, i
 
     // We cannot write the entire contents of buffer, because each horizontal line may contain additional padding bytes
     // for performance reasons. lineSize includes this padding, so use it to determine the start of each row. See
-    // <https://libav.org/documentation/doxygen/master/structAVFrame.html#aa52bfc6605f6a3059a0c3226cc0f6567>.
+    // <https://ffmpeg.org/doxygen/trunk/structAVFrame.html#aa52bfc6605f6a3059a0c3226cc0f6567>.
     for (int i = 0; i < height; ++i) {
         auto lineStart = &buffer[i * lineSize * sizeof(buffer[0])];
         fwrite(lineStart, sizeof(buffer[0]), width, f);
