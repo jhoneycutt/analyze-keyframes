@@ -2,7 +2,7 @@ CC = g++
 CFLAGS = -std=c++11 -Werror -Wall -Wextra -Wpedantic
 CFLAGS_DEBUG = -g -O0
 CFLAGS_RELEASE = -O3
-LDFLAGS = -lavformat -lavcodec -lavutil -lz -lm -lpthread -lbz2 -llzma -lswresample
+LDFLAGS = -lavformat -lavcodec -lavutil -lz -lm -lpthread -lbz2 -llzma -lswresample -lswscale
 EXE = analyze-keyframes
 EXE_DEBUG = analyze-keyframes_debug
 

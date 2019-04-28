@@ -22,6 +22,8 @@ extern "C"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
 
 }
 
@@ -177,16 +179,29 @@ static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AV
             return result;
         }
 
+        AVFrame* frameGrayscale = av_frame_alloc();
+        result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, frame->width, frame->height, AV_PIX_FMT_GRAY8, 32);
+        if (result < 0) {
+            logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
+            return result;
+         }
+
         logging("Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]", codecContext->frame_number, av_get_picture_type_char(frame->pict_type), frame->pkt_size, frame->pts, frame->key_frame, frame->coded_picture_number);
+
+        auto conversionContext = sws_getContext(codecContext->width, codecContext->height, codecContext->pix_fmt, codecContext->width, codecContext->height, AV_PIX_FMT_GRAY8, SWS_BILINEAR, NULL, NULL, NULL);
+        sws_scale(conversionContext, (uint8_t const * const *)frame->data, frame->linesize, 0, codecContext->height, frameGrayscale->data, frameGrayscale->linesize);
+        sws_freeContext(conversionContext);
 
         char frameFilename[1024];
         snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
-
-        if (!outputGrayscaleKeyframe(frame->data[0], frame->linesize[0], frame->width, frame->height, frameFilename))
-            logging("Error: Failed to write frame contents to %s.", frameFilename);
+        // save a grayscale frame into a .pgm file
+        outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], frame->width, frame->height, frameFilename);
 
         av_frame_unref(frame);
+        av_freep(&frameGrayscale->data[0]);
+        av_frame_unref(frameGrayscale);
     }
+
     return 0;
 }
 
