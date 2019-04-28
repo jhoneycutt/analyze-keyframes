@@ -11,21 +11,13 @@
  *    BSD 3-clause; see LICENSE.
  */
 
+#include "analyze-keyframes.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-
-extern "C"
-{
-
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/imgutils.h>
-#include <libswscale/swscale.h>
-
-}
 
 static void logging(const char* format, ...);
 static int decodePacket(const AVPacket*, AVCodecContext*, AVFrame*);
@@ -47,18 +39,19 @@ int main(int argc, const char* argv[])
 
     auto inputFile = argv[1];
 
-    AVFormatContext* formatContext = avformat_alloc_context();
-
     logging("Opening input file %s...", inputFile);
-    int result = avformat_open_input(&formatContext, inputFile, NULL, NULL);
+    AVFormatContext* formatContextRawPointer = nullptr;
+    int result = avformat_open_input(&formatContextRawPointer, inputFile, NULL, NULL);
+    AVInputFileFormatContextPtr formatContext(formatContextRawPointer);
     if (result) {
         logging("Error: Failed to open input file: %s", AVError(result));
         return -1;
     }
 
+
     logging("    Format %s, duration %lld us, bit_rate %lld\n", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
 
-    result = avformat_find_stream_info(formatContext, NULL);
+    result = avformat_find_stream_info(formatContext.get(), NULL);
     if (result) {
         logging("Error: Failed to find stream info: %s", AVError(result));
         return -1;
@@ -101,14 +94,14 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-    AVCodecContext* codecContext = avcodec_alloc_context3(videoCodec);
-    result = avcodec_parameters_to_context(codecContext, videoCodecParameters);
+    AVCodecContextPtr codecContext(avcodec_alloc_context3(videoCodec));
+    result = avcodec_parameters_to_context(codecContext.get(), videoCodecParameters);
     if (result < 0) {
         logging("Error: Failed to copy codec parameters to codec context: %s", AVError(result));
          return -1;
     }
 
-    result = avcodec_open2(codecContext, videoCodec, NULL);
+    result = avcodec_open2(codecContext.get(), videoCodec, NULL);
     if (result < 0) {
         logging("Error: Failed to open codec: %s", AVError(result));
         return -1;
@@ -117,10 +110,10 @@ int main(int argc, const char* argv[])
     // Skip non-keyframes when processing.
     codecContext->skip_frame = AVDISCARD_NONKEY;
 
-    AVFrame* frame = av_frame_alloc();
-    AVPacket* packet = av_packet_alloc();
+    AVFramePtr frame(av_frame_alloc());
+    AVPacketPtr packet(av_packet_alloc());
     while (true) {
-        result = av_read_frame(formatContext, packet);
+        result = av_read_frame(formatContext.get(), packet.get());
         if (result == AVERROR_EOF) {
             // If we reach the end of the stream, exit cleanly.
             break;
@@ -134,19 +127,14 @@ int main(int argc, const char* argv[])
         if (packet->stream_index != videoStreamIndex)
             continue;
 
-        result = decodePacket(packet, codecContext, frame);
+        result = decodePacket(packet.get(), codecContext.get(), frame.get());
         if (result < 0)
             break;
 
         // Reset the packet for reuse.
-        av_packet_unref(packet);
+        av_packet_unref(packet.get());
     }
 
-    avformat_close_input(&formatContext);
-    avformat_free_context(formatContext);
-    av_packet_free(&packet);
-    av_frame_free(&frame);
-    avcodec_free_context(&codecContext);
     return 0;
 }
 
@@ -167,6 +155,7 @@ static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AV
         return result;
     }
 
+    AVFramePtr frameGrayscale(av_frame_alloc());
     while (true) {
         // Process a single frame from the decoder. If the decoder returns EAGAIN, more input data is needed to decode
         // the next frame. If it returns EOF, we've reached the end of the stream.
@@ -179,27 +168,30 @@ static int decodePacket(const AVPacket* packet, AVCodecContext* codecContext, AV
             return result;
         }
 
-        AVFrame* frameGrayscale = av_frame_alloc();
         result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, frame->width, frame->height, AV_PIX_FMT_GRAY8, 32);
         if (result < 0) {
             logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
             return result;
-         }
+        }
 
         logging("Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]", codecContext->frame_number, av_get_picture_type_char(frame->pict_type), frame->pkt_size, frame->pts, frame->key_frame, frame->coded_picture_number);
 
-        auto conversionContext = sws_getContext(codecContext->width, codecContext->height, codecContext->pix_fmt, codecContext->width, codecContext->height, AV_PIX_FMT_GRAY8, SWS_BILINEAR, NULL, NULL, NULL);
-        sws_scale(conversionContext, (uint8_t const * const *)frame->data, frame->linesize, 0, codecContext->height, frameGrayscale->data, frameGrayscale->linesize);
-        sws_freeContext(conversionContext);
+        int width = frame->width;
+        int height = frame->height;
+        auto srcFormat = codecContext->pix_fmt;
+        auto destFormat = AV_PIX_FMT_GRAY8;
+        int startRow = 0;
+        int rowCount = height;
+        SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, NULL, NULL, NULL));
+        sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
 
         char frameFilename[1024];
         snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
-        // save a grayscale frame into a .pgm file
-        outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], frame->width, frame->height, frameFilename);
+        outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], width, height, frameFilename);
 
         av_frame_unref(frame);
         av_freep(&frameGrayscale->data[0]);
-        av_frame_unref(frameGrayscale);
+        av_frame_unref(frameGrayscale.get());
     }
 
     return 0;
