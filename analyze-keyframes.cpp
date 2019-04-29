@@ -13,18 +13,35 @@
 
 #include "analyze-keyframes.h"
 
+#include <algorithm>
+#include <array>
 #include <cinttypes>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <vector>
 
+static const unsigned VerticalCellCount = 3;
+static const unsigned HorizontalCellCount = 3;
+static const char *FrameAnalysisCSVFile = "frame-analysis.csv";
+
+// Outputs each keyframe as an 8bpp grayscale bitmap, named like frame-0.pgm. To convert them to JPEG, you can use
+// mogrify from ImageMagick, like: mogrify -format jpeg *.pgm
 static const bool OutputKeyframeImages = false;
 
+using std::array;
+using std::endl;
+using std::ios;
+using std::ofstream;
+using std::vector;
+
 static void logging(const char* format, ...);
-static bool processPacket(const AVPacket*, AVCodecContext*);
+static bool processPacket(const AVPacket*, AVCodecContext*, const AVRational& timeBase);
 static bool outputGrayscaleFrame(AVFrame*, const char* filename);
-static bool processKeyframe(AVCodecContext*, AVFrame*);
+static bool analyzeGrayscaleFrame(AVFrame*, const AVRational& timeBase);
+static bool processKeyframe(AVCodecContext*, AVFrame*, const AVRational& timeBase);
 static const char* AVError(int errorCode);
 
 int main(int argc, const char* argv[])
@@ -55,6 +72,7 @@ int main(int argc, const char* argv[])
 
     AVCodec* videoCodec = nullptr;
     AVCodecParameters* videoCodecParameters = nullptr;
+    AVRational videoTimeBase;
     int videoStreamIndex = 0;
 
     // Loop though all streams, and print some information about them.
@@ -79,6 +97,7 @@ int main(int argc, const char* argv[])
             videoStreamIndex = i;
             videoCodec = codec;
             videoCodecParameters = codecParameters;
+            videoTimeBase = stream->time_base;
             logging("    Video Codec: resolution %d x %d", codecParameters->width, codecParameters->height);
         } else if (codecParameters->codec_type == AVMEDIA_TYPE_AUDIO)
             logging("    Audio Codec: channels %d, sample rate %d", codecParameters->channels, codecParameters->sample_rate);
@@ -88,6 +107,14 @@ int main(int argc, const char* argv[])
 
     if (!videoCodec) {
         logging("Error: Failed to find a decodable video stream in input file.");
+        return -1;
+    }
+
+    int width = videoCodecParameters->width;
+    int height = videoCodecParameters->height;
+    if (width <= 0 || static_cast<unsigned>(width) < HorizontalCellCount ||
+        height <= 0 || static_cast<unsigned>(height) < VerticalCellCount) {
+        logging("Error: Width and/or height of video stream is less than desired cell count.");
         return -1;
     }
 
@@ -107,6 +134,9 @@ int main(int argc, const char* argv[])
     // Skip non-keyframes when processing.
     codecContext->skip_frame = AVDISCARD_NONKEY;
 
+    // Remove the existing analysis file, if any.
+    remove(FrameAnalysisCSVFile);
+
     while (true) {
         AVPacketPtr packet(av_packet_alloc());
         result = av_read_frame(formatContext.get(), packet.get());
@@ -123,11 +153,13 @@ int main(int argc, const char* argv[])
         if (packet->stream_index != videoStreamIndex)
             continue;
 
-        if (!processPacket(packet.get(), codecContext.get())) {
+        if (!processPacket(packet.get(), codecContext.get(), videoTimeBase)) {
             logging("Error: Failed to process packet.");
             return -1;
         }
     }
+
+    logging("Processing complete.");
 
     return 0;
 }
@@ -148,7 +180,7 @@ static void logging(const char* fmt, ...)
     fprintf(stderr, "\n");
 }
 
-static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
+static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, const AVRational& timeBase)
 {
     int result = avcodec_send_packet(codecContext, packet);
     if (result < 0) {
@@ -169,7 +201,7 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
             return false;
         }
 
-        if (!processKeyframe(codecContext, frame.get())) {
+        if (!processKeyframe(codecContext, frame.get(), timeBase)) {
             logging("Error: Failed to process keyframe.");
             return false;
         }
@@ -178,7 +210,7 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
     return true;
 }
 
-static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
+static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame, const AVRational& timeBase)
 {
     logging("Processing keyframe %d pts %d dts %d...", codecContext->frame_number, frame->pts, frame->coded_picture_number);
 
@@ -198,7 +230,8 @@ static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
     SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, nullptr, nullptr, nullptr));
     sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
 
-    // These values aren't set by av_image_alloc, so set them manually.
+    // These values aren't set by av_image_alloc, so copy them manually.
+    frameGrayscale->best_effort_timestamp = frame->best_effort_timestamp;
     frameGrayscale->width = width;
     frameGrayscale->height = height;
 
@@ -208,11 +241,87 @@ static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
         outputGrayscaleFrame(frameGrayscale.get(), frameFilename);
     }
 
+    bool analysisSucceeded = analyzeGrayscaleFrame(frameGrayscale.get(), timeBase);
+
     // It's necessary to manually free the data pointer after calling av_image_alloc. See
     // <https://ffmpeg.org/doxygen/4.1/group__lavu__picture.html#ga841e0a89a642e24141af1918a2c10448>.
     av_freep(&frameGrayscale->data[0]);
 
+    return analysisSucceeded;
+}
+
+static inline float median(vector<uint8_t>& v)
+{
+    int middle = v.size() / 2;
+    nth_element(v.begin(), v.begin() + middle, v.end());
+    float median = v[middle];
+
+    // For sets with an odd number of items, the median is the middle element.
+    if (v.size() & 1)
+        return median;
+
+    // For sets with an even number of items, the median is the average of the middle two elements. It is more efficient
+    // to call max_element on the lower half of the list than it is to call nth_element() again.
+    // FIXME: Although this gives the true median, it's probably unnecessarily precise. For our purposes, it's probably
+    // fine to just return the first value found above and avoid another O(n) operation.
+    auto iter = max_element(v.begin(), v.begin() + middle - 1);
+    return (median + *iter) / 2;
+}
+
+static inline float cellMedian(const uint8_t* data, int lineSize, unsigned xOffset, unsigned xPixels, unsigned yOffset, unsigned yPixels)
+{
+    vector<uint8_t> pixels(xPixels * yPixels);
+    for (unsigned y = 0; y < yPixels; ++y) {
+        // Horizontal lines may contain additional padding bytes. lineSize includes this padding, so use it to determine
+        // the start of each row. See <https://ffmpeg.org/doxygen/trunk/structAVFrame.html#aa52bfc6605f6a3059a0c3226cc0f6567>.
+        memcpy(&pixels[y * xPixels], &data[(yOffset + y) * lineSize + xOffset], xPixels);
+    }
+
+    return median(pixels);
+}
+
+static bool outputFrameAnalysis(AVFrame* frame, const float* values, unsigned count, const AVRational& timeBase)
+{
+    ofstream outputFile(FrameAnalysisCSVFile, ios::app);
+    if (!outputFile.good()) {
+        logging("Error: Failed to open CSV file.");
+        return false;
+    }
+
+    float timestamp = frame->best_effort_timestamp * av_q2d(timeBase);
+
+    outputFile << timestamp;
+    for (unsigned i = 0; i < count; ++i)
+        outputFile << "," << values[i];
+    outputFile << endl;
+
     return true;
+}
+
+static bool analyzeGrayscaleFrame(AVFrame* frame, const AVRational& timeBase)
+{
+    int remainingHeight = frame->height;
+    int lineSize = frame->linesize[0];
+    auto data = frame->data[0];
+    array<float, VerticalCellCount * HorizontalCellCount> cellMedians;
+
+    for (unsigned y = 0; y < VerticalCellCount; ++y) {
+        unsigned yOffset = frame->height - remainingHeight;
+        unsigned yPixels = remainingHeight / (VerticalCellCount - y);
+        remainingHeight -= yPixels;
+
+        int remainingWidth = frame->width;
+        for (unsigned x = 0; x < HorizontalCellCount; ++x) {
+            unsigned xOffset = frame->width - remainingWidth;
+            unsigned xPixels = remainingWidth / (HorizontalCellCount - x);
+            remainingWidth -= xPixels;
+
+            float median = cellMedian(data, lineSize, xOffset, xPixels, yOffset, yPixels);
+            cellMedians[y * HorizontalCellCount + x] = median;
+        }
+    }
+
+    return outputFrameAnalysis(frame, cellMedians.data(), cellMedians.size(), timeBase);
 }
 
 static bool outputGrayscaleFrame(AVFrame* frame, const char* filename)
