@@ -1,0 +1,21 @@
+This project is implemented for the Pex C++ programming challenge; see
+<https://gist.github.com/ehmo/ece1b13a101b416c6b3c928ad11e1776>.
+
+It is based on the file 0_hello_world.c from
+<https://github.com/leandromoreira/ffmpeg-libav-tutorial>, which is Copyright
+2017, Leandro Moreira and released under the BSD license; see LICENSE.
+
+It was designed with and tested against FFmpeg v4.1.3.
+
+To build, type:
+
+    $ make
+
+After building, it can be run with:
+
+    $ ./analyze-keyframes <video file>
+
+which will output a CSV file, frame-analysis.csv. By changing the constants
+VerticalCellCount, HorizontalCellCount, FrameAnalysisCSVFile, or
+OutputKeyframeImages in analyze-keyframes.cpp, you can modify the behavior of
+the program.
