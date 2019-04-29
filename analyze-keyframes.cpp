@@ -38,7 +38,7 @@ int main(int argc, const char* argv[])
 
     logging("Opening input file %s...", inputFile);
     AVFormatContext* formatContextRawPointer = nullptr;
-    int result = avformat_open_input(&formatContextRawPointer, inputFile, NULL, NULL);
+    int result = avformat_open_input(&formatContextRawPointer, inputFile, nullptr, nullptr);
     AVInputFileFormatContextPtr formatContext(formatContextRawPointer);
     if (result) {
         logging("Error: Failed to open input file: %s", AVError(result));
@@ -47,7 +47,7 @@ int main(int argc, const char* argv[])
 
     logging("    Format %s, duration %lld us, bit_rate %lld\n", formatContext->iformat->name, formatContext->duration, formatContext->bit_rate);
 
-    result = avformat_find_stream_info(formatContext.get(), NULL);
+    result = avformat_find_stream_info(formatContext.get(), nullptr);
     if (result) {
         logging("Error: Failed to find stream info: %s", AVError(result));
         return -1;
@@ -98,7 +98,7 @@ int main(int argc, const char* argv[])
          return -1;
     }
 
-    result = avcodec_open2(codecContext.get(), videoCodec, NULL);
+    result = avcodec_open2(codecContext.get(), videoCodec, nullptr);
     if (result < 0) {
         logging("Error: Failed to open codec: %s", AVError(result));
         return -1;
@@ -195,7 +195,7 @@ static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
     auto destFormat = AV_PIX_FMT_GRAY8;
     int startRow = 0;
     int rowCount = height;
-    SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, NULL, NULL, NULL));
+    SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, nullptr, nullptr, nullptr));
     sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
 
     if (OutputKeyframeImages) {
