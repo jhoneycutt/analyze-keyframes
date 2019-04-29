@@ -54,6 +54,9 @@ int main(int argc, const char* argv[])
     auto inputFile = argv[1];
 
     logging("Opening input file %s...", inputFile);
+
+    // It's not possible to get a pointer to a unique_ptr's internal pointer, but avformat_open_input takes a pointer
+    // to the dest pointer, so we pass a raw pointer and then "adopt" it into the AVInputFileFormatContextPtr.
     AVFormatContext* formatContextRawPointer = nullptr;
     int result = avformat_open_input(&formatContextRawPointer, inputFile, nullptr, nullptr);
     AVInputFileFormatContextPtr formatContext(formatContextRawPointer);
