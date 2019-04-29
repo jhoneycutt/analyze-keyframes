@@ -78,7 +78,8 @@ int main(int argc, const char* argv[])
     AVRational videoTimeBase;
     int videoStreamIndex = 0;
 
-    // Loop though all streams, and print some information about them.
+    // Loop though all streams, and print some information about them. Find the first video stream for which we have a
+    // decoder installed; this is the stream we'll analyze.
     for (unsigned i = 0; i < formatContext->nb_streams; i++) {
         AVStream* stream = formatContext->streams[i];
         logging("Stream #%u", i);
