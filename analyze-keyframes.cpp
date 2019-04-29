@@ -25,7 +25,7 @@
 
 static const unsigned VerticalCellCount = 3;
 static const unsigned HorizontalCellCount = 3;
-static const char *FrameAnalysisCSVFile = "frame-analysis.csv";
+static const char* FrameAnalysisCSVFile = "frame-analysis.csv";
 
 // Outputs each keyframe as an 8bpp grayscale bitmap, named like frame-0.pgm. To convert them to JPEG, you can use
 // mogrify from ImageMagick, like: mogrify -format jpeg *.pgm
