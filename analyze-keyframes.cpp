@@ -24,6 +24,7 @@ static const bool OutputKeyframeImages = false;
 static void logging(const char* format, ...);
 static bool processPacket(const AVPacket*, AVCodecContext*);
 static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
+static bool processKeyframe(AVCodecContext*, AVFrame*);
 static const char* AVError(int errorCode);
 
 int main(int argc, const char* argv[])
@@ -168,34 +169,44 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
             return false;
         }
 
-        AVFramePtr frameGrayscale(av_frame_alloc());
-        result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, frame->width, frame->height, AV_PIX_FMT_GRAY8, 32);
-        if (result < 0) {
-            logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
+        if (!processKeyframe(codecContext, frame.get())) {
+            logging("Error: Failed to process keyframe.");
             return false;
         }
-
-        logging("Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]", codecContext->frame_number, av_get_picture_type_char(frame->pict_type), frame->pkt_size, frame->pts, frame->key_frame, frame->coded_picture_number);
-
-        int width = frame->width;
-        int height = frame->height;
-        auto srcFormat = codecContext->pix_fmt;
-        auto destFormat = AV_PIX_FMT_GRAY8;
-        int startRow = 0;
-        int rowCount = height;
-        SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, NULL, NULL, NULL));
-        sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
-
-        if (OutputKeyframeImages) {
-            char frameFilename[1024];
-            snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
-            outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], width, height, frameFilename);
-        }
-
-        // It's necessary to manually free the data pointer after calling av_image_alloc. See
-        // <https://ffmpeg.org/doxygen/4.1/group__lavu__picture.html#ga841e0a89a642e24141af1918a2c10448>.
-        av_freep(&frameGrayscale->data[0]);
     }
+
+    return true;
+}
+
+static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
+{
+    logging("Processing keyframe %d pts %d dts %d...", codecContext->frame_number, frame->pts, frame->coded_picture_number);
+
+    AVFramePtr frameGrayscale(av_frame_alloc());
+    int width = frame->width;
+    int height = frame->height;
+    int result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, width, height, AV_PIX_FMT_GRAY8, 32);
+    if (result < 0) {
+        logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
+        return false;
+    }
+
+    auto srcFormat = codecContext->pix_fmt;
+    auto destFormat = AV_PIX_FMT_GRAY8;
+    int startRow = 0;
+    int rowCount = height;
+    SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, NULL, NULL, NULL));
+    sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
+
+    if (OutputKeyframeImages) {
+        char frameFilename[1024];
+        snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
+        outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], width, height, frameFilename);
+    }
+
+    // It's necessary to manually free the data pointer after calling av_image_alloc. See
+    // <https://ffmpeg.org/doxygen/4.1/group__lavu__picture.html#ga841e0a89a642e24141af1918a2c10448>.
+    av_freep(&frameGrayscale->data[0]);
 
     return true;
 }
