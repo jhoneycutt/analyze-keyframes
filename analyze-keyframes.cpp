@@ -326,26 +326,25 @@ static bool analyzeGrayscaleFrame(AVFrame* frame, const AVRational& timeBase)
 
 static bool outputGrayscaleFrame(AVFrame* frame, const char* filename)
 {
-    FILE* f = fopen(filename, "w");
-    if (!f)
+    ofstream outputFile(filename, ios::binary);
+    if (!outputFile.good())
         return false;
 
     int width = frame->width;
     int height = frame->height;
-    int lineSize = frame->linesize[0];
-    auto data = frame->data[0];
 
     // For format description, see <https://en.wikipedia.org/wiki/Netpbm_format#PGM_example>
-    fprintf(f, "P5\n%d %d\n%d\n", width, height, 255);
+    outputFile << "P5\n" << width << " " << height << "\n" << 255 << "\n";
 
     // We cannot write the entire contents of buffer, because each horizontal line may contain additional padding bytes
     // for performance reasons. lineSize includes this padding, so use it to determine the start of each row. See
     // <https://ffmpeg.org/doxygen/trunk/structAVFrame.html#aa52bfc6605f6a3059a0c3226cc0f6567>.
+    int lineSize = frame->linesize[0];
+    auto data = frame->data[0];
     for (int i = 0; i < height; ++i) {
-        auto lineStart = &data[i * lineSize * sizeof(data[0])];
-        fwrite(lineStart, sizeof(data[0]), width, f);
+        auto lineStart = &data[i * lineSize];
+        outputFile.write(reinterpret_cast<char*>(lineStart), width);
     }
 
-    fclose(f);
     return true;
 }
