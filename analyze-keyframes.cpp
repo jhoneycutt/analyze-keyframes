@@ -122,7 +122,7 @@ int main(int argc, const char* argv[])
     result = avcodec_parameters_to_context(codecContext.get(), videoCodecParameters);
     if (result < 0) {
         logging("Error: Failed to copy codec parameters to codec context: %s", AVError(result));
-         return -1;
+        return -1;
     }
 
     result = avcodec_open2(codecContext.get(), videoCodec, nullptr);
