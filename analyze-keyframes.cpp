@@ -23,7 +23,7 @@ static const bool OutputKeyframeImages = false;
 
 static void logging(const char* format, ...);
 static bool processPacket(const AVPacket*, AVCodecContext*);
-static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename);
+static bool outputGrayscaleFrame(AVFrame*, const char* filename);
 static bool processKeyframe(AVCodecContext*, AVFrame*);
 static const char* AVError(int errorCode);
 
@@ -198,10 +198,14 @@ static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
     SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, nullptr, nullptr, nullptr));
     sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
 
+    // These values aren't set by av_image_alloc, so set them manually.
+    frameGrayscale->width = width;
+    frameGrayscale->height = height;
+
     if (OutputKeyframeImages) {
         char frameFilename[1024];
         snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
-        outputGrayscaleKeyframe(frameGrayscale->data[0], frameGrayscale->linesize[0], width, height, frameFilename);
+        outputGrayscaleFrame(frameGrayscale.get(), frameFilename);
     }
 
     // It's necessary to manually free the data pointer after calling av_image_alloc. See
@@ -211,11 +215,16 @@ static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame)
     return true;
 }
 
-static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, int width, int height, const char* filename)
+static bool outputGrayscaleFrame(AVFrame* frame, const char* filename)
 {
     FILE* f = fopen(filename, "w");
     if (!f)
         return false;
+
+    int width = frame->width;
+    int height = frame->height;
+    int lineSize = frame->linesize[0];
+    auto data = frame->data[0];
 
     // For format description, see <https://en.wikipedia.org/wiki/Netpbm_format#PGM_example>
     fprintf(f, "P5\n%d %d\n%d\n", width, height, 255);
@@ -224,8 +233,8 @@ static bool outputGrayscaleKeyframe(const unsigned char* buffer, int lineSize, i
     // for performance reasons. lineSize includes this padding, so use it to determine the start of each row. See
     // <https://ffmpeg.org/doxygen/trunk/structAVFrame.html#aa52bfc6605f6a3059a0c3226cc0f6567>.
     for (int i = 0; i < height; ++i) {
-        auto lineStart = &buffer[i * lineSize * sizeof(buffer[0])];
-        fwrite(lineStart, sizeof(buffer[0]), width, f);
+        auto lineStart = &data[i * lineSize * sizeof(data[0])];
+        fwrite(lineStart, sizeof(data[0]), width, f);
     }
 
     fclose(f);
