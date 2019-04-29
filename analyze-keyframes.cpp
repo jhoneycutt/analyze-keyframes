@@ -4,7 +4,7 @@
  *   keyframes from a video file.
  *
  *  Copyright:
- *    Leandro Moreira (2017) <https://github.com/leandromoreira>>
+ *    Leandro Moreira (2017) <https://github.com/leandromoreira>
  *    Jon Honeycutt   (2019) <jhoneycutt@gmail.com>
  *
  *  License:
