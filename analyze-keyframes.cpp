@@ -14,6 +14,7 @@
 #include "analyze-keyframes.h"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cinttypes>
 #include <cstdarg>
@@ -21,11 +22,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <list>
+#include <mutex>
+#include <set>
+#include <thread>
 #include <vector>
 
 static const unsigned VerticalCellCount = 3;
 static const unsigned HorizontalCellCount = 3;
 static const char* FrameAnalysisCSVFile = "frame-analysis.csv";
+static const unsigned MaxUnprocessedFrameCount = 100;
 
 // Outputs each keyframe as an 8bpp grayscale bitmap, named like frame-0.pgm. To convert them to JPEG, you can use
 // mogrify from ImageMagick, like: mogrify -format jpeg *.pgm
@@ -35,14 +41,43 @@ using std::array;
 using std::endl;
 using std::ios;
 using std::ofstream;
+using std::list;
+using std::lock_guard;
+using std::mutex;
+using std::set;
+using std::string;
+using std::thread;
+using std::unique_ptr;
 using std::vector;
 
+using namespace std::chrono;
+
 static void logging(const char* format, ...);
-static bool processPacket(const AVPacket*, AVCodecContext*, const AVRational& timeBase);
+static bool processPacket(const AVPacket*, AVCodecContext*);
 static bool outputGrayscaleFrame(AVFrame*, const char* filename);
-static bool analyzeGrayscaleFrame(AVFrame*, const AVRational& timeBase);
-static bool processKeyframe(AVCodecContext*, AVFrame*, const AVRational& timeBase);
-static const char* AVError(int errorCode);
+static void analyzeGrayscaleFrame(AVFrame*);
+static void processKeyframe(AVFrame*);
+static string AVError(int errorCode);
+static void workerThread();
+static bool outputFrameAnalysis();
+
+struct FrameAnalysis
+{
+    float timestamp;
+    int frameNumber;
+    array<float, VerticalCellCount * HorizontalCellCount> values;
+};
+
+bool processingComplete = false;
+
+mutex unprocessedFramesMutex;
+list<AVFramePtr> unprocessedFrames;
+
+mutex processedFrameDataMutex;
+auto comparator = [](const unique_ptr<FrameAnalysis>& a, const unique_ptr<FrameAnalysis>& b) { return a->frameNumber < b->frameNumber; };
+set<unique_ptr<FrameAnalysis>, decltype(comparator)> processedFrameData(comparator);
+
+AVRational videoTimeBase;
 
 int main(int argc, const char* argv[])
 {
@@ -61,7 +96,7 @@ int main(int argc, const char* argv[])
     int result = avformat_open_input(&formatContextRawPointer, inputFile, nullptr, nullptr);
     AVInputFileFormatContextPtr formatContext(formatContextRawPointer);
     if (result) {
-        logging("Error: Failed to open input file: %s", AVError(result));
+        logging("Error: Failed to open input file: %s", AVError(result).c_str());
         return -1;
     }
 
@@ -69,13 +104,12 @@ int main(int argc, const char* argv[])
 
     result = avformat_find_stream_info(formatContext.get(), nullptr);
     if (result) {
-        logging("Error: Failed to find stream info: %s", AVError(result));
+        logging("Error: Failed to find stream info: %s", AVError(result).c_str());
         return -1;
     }
 
     AVCodec* videoCodec = nullptr;
     AVCodecParameters* videoCodecParameters = nullptr;
-    AVRational videoTimeBase;
     int videoStreamIndex = 0;
 
     // Loop though all streams, and print some information about them. Find the first video stream for which we have a
@@ -125,13 +159,13 @@ int main(int argc, const char* argv[])
     AVCodecContextPtr codecContext(avcodec_alloc_context3(videoCodec));
     result = avcodec_parameters_to_context(codecContext.get(), videoCodecParameters);
     if (result < 0) {
-        logging("Error: Failed to copy codec parameters to codec context: %s", AVError(result));
+        logging("Error: Failed to copy codec parameters to codec context: %s", AVError(result).c_str());
         return -1;
     }
 
     result = avcodec_open2(codecContext.get(), videoCodec, nullptr);
     if (result < 0) {
-        logging("Error: Failed to open codec: %s", AVError(result));
+        logging("Error: Failed to open codec: %s", AVError(result).c_str());
         return -1;
     }
 
@@ -141,7 +175,24 @@ int main(int argc, const char* argv[])
     // Remove the existing analysis file, if any.
     remove(FrameAnalysisCSVFile);
 
+    unsigned threadCount = thread::hardware_concurrency();
+    threadCount = threadCount ? threadCount : 4;
+    vector<thread> threads;
+    for (unsigned i = 0; i < threadCount; ++i)
+        threads.push_back(thread(workerThread));
+
     while (true) {
+        unsigned unprocessedFrameCount;
+        {
+            lock_guard<mutex> lock(unprocessedFramesMutex);
+            unprocessedFrameCount = unprocessedFrames.size();
+        }
+        if (unprocessedFrameCount >= MaxUnprocessedFrameCount) {
+            logging("Unprocessed frame buffer is full, sleeping...");
+            std::this_thread::sleep_for(milliseconds(10));
+            continue;
+        }
+
         AVPacketPtr packet(av_packet_alloc());
         result = av_read_frame(formatContext.get(), packet.get());
         if (result == AVERROR_EOF) {
@@ -150,33 +201,44 @@ int main(int argc, const char* argv[])
         }
 
         if (result < 0) {
-            logging("Error: Failed to read packet from stream: %s", AVError(result));
+            logging("Error: Failed to read packet from stream: %s", AVError(result).c_str());
             return -1;
         }
 
         if (packet->stream_index != videoStreamIndex)
             continue;
 
-        if (!processPacket(packet.get(), codecContext.get(), videoTimeBase)) {
+        if (!processPacket(packet.get(), codecContext.get())) {
             logging("Error: Failed to process packet.");
             return -1;
         }
     }
+
+
+    processingComplete = true;
+    for (auto&& t : threads)
+        t.join();
+
+    // FIXME: We should write out the frame data during processing rather than letting it accumulate. 
+    outputFrameAnalysis();
 
     logging("Processing complete.");
 
     return 0;
 }
 
-static const char* AVError(int errorCode)
+static string AVError(int errorCode)
 {
-    static char errorString[AV_ERROR_MAX_STRING_SIZE];
+    char errorString[AV_ERROR_MAX_STRING_SIZE];
     av_make_error_string(errorString, AV_ERROR_MAX_STRING_SIZE, errorCode);
     return errorString;
 }
 
+mutex loggingMutex;
 static void logging(const char* fmt, ...)
 {
+    lock_guard<mutex> lock(loggingMutex);
+
     va_list args;
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);
@@ -184,11 +246,11 @@ static void logging(const char* fmt, ...)
     fprintf(stderr, "\n");
 }
 
-static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, const AVRational& timeBase)
+static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext)
 {
     int result = avcodec_send_packet(codecContext, packet);
     if (result < 0) {
-        logging("Error: Failed sending packet to the decoder: %s", AVError(result));
+        logging("Error: Failed sending packet to the decoder: %s", AVError(result).c_str());
         return false;
     }
 
@@ -201,57 +263,69 @@ static bool processPacket(const AVPacket* packet, AVCodecContext* codecContext, 
             return true;
 
         if (result < 0) {
-            logging("Error: Failed to receive a frame from the decoder: %s", AVError(result));
+            logging("Error: Failed to receive a frame from the decoder: %s", AVError(result).c_str());
             return false;
         }
 
-        if (!processKeyframe(codecContext, frame.get(), timeBase)) {
-            logging("Error: Failed to process keyframe.");
-            return false;
-        }
+        lock_guard<mutex> lock(unprocessedFramesMutex);
+        unprocessedFrames.push_back(std::move(frame));
     }
 
     return true;
 }
 
-static bool processKeyframe(AVCodecContext* codecContext, AVFrame* frame, const AVRational& timeBase)
+static void workerThread()
 {
-    logging("Processing keyframe %d pts %d dts %d...", codecContext->frame_number, frame->pts, frame->coded_picture_number);
+    while (true) {
+        AVFramePtr frame;
+        {
+            lock_guard<mutex> lock(unprocessedFramesMutex);
+            if (unprocessedFrames.size()) {
+                frame.swap(unprocessedFrames.front());
+                unprocessedFrames.pop_front();
+            }
+        }
 
-    AVFramePtr frameGrayscale(av_frame_alloc());
+        if (frame)
+            processKeyframe(frame.get());
+
+        if (processingComplete)
+            return;
+    }
+}
+
+
+static void processKeyframe(AVFrame* frame)
+{
+    logging("Processing keyframe pts %d dts %d...", frame->pts, frame->coded_picture_number);
+
+    AVFramePtr frameGrayscale(av_frame_clone(frame));
     int width = frame->width;
     int height = frame->height;
     int result = av_image_alloc(frameGrayscale->data, frameGrayscale->linesize, width, height, AV_PIX_FMT_GRAY8, 32);
     if (result < 0) {
-        logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result));
-        return false;
+        logging("Error: Failed to allocate grayscale image for frame: %s", AVError(result).c_str());
+        return;
     }
 
-    auto srcFormat = codecContext->pix_fmt;
-    auto destFormat = AV_PIX_FMT_GRAY8;
+    AVPixelFormat srcFormat = static_cast<AVPixelFormat>(frame->format);
+    AVPixelFormat destFormat = AV_PIX_FMT_GRAY8;
     int startRow = 0;
     int rowCount = height;
     SwsContextPtr conversionContext(sws_getContext(width, height, srcFormat, width, height, destFormat, SWS_BILINEAR, nullptr, nullptr, nullptr));
     sws_scale(conversionContext.get(), frame->data, frame->linesize, startRow, rowCount, frameGrayscale->data, frameGrayscale->linesize);
 
-    // These values aren't set by av_image_alloc, so copy them manually.
-    frameGrayscale->best_effort_timestamp = frame->best_effort_timestamp;
-    frameGrayscale->width = width;
-    frameGrayscale->height = height;
-
     if (OutputKeyframeImages) {
         char frameFilename[1024];
-        snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", codecContext->frame_number);
+        snprintf(frameFilename, sizeof(frameFilename), "frame-%d.pgm", frame->coded_picture_number);
         outputGrayscaleFrame(frameGrayscale.get(), frameFilename);
     }
 
-    bool analysisSucceeded = analyzeGrayscaleFrame(frameGrayscale.get(), timeBase);
+    analyzeGrayscaleFrame(frameGrayscale.get());
 
     // It's necessary to manually free the data pointer after calling av_image_alloc. See
     // <https://ffmpeg.org/doxygen/4.1/group__lavu__picture.html#ga841e0a89a642e24141af1918a2c10448>.
     av_freep(&frameGrayscale->data[0]);
-
-    return analysisSucceeded;
 }
 
 static inline float median(vector<uint8_t>& v)
@@ -284,7 +358,7 @@ static inline float cellMedian(const uint8_t* data, int lineSize, unsigned xOffs
     return median(pixels);
 }
 
-static bool outputFrameAnalysis(AVFrame* frame, const float* values, unsigned count, const AVRational& timeBase)
+static bool outputFrameAnalysis()
 {
     ofstream outputFile(FrameAnalysisCSVFile, ios::app);
     if (!outputFile.good()) {
@@ -292,22 +366,25 @@ static bool outputFrameAnalysis(AVFrame* frame, const float* values, unsigned co
         return false;
     }
 
-    float timestamp = frame->best_effort_timestamp * av_q2d(timeBase);
-
-    outputFile << timestamp;
-    for (unsigned i = 0; i < count; ++i)
-        outputFile << "," << values[i];
-    outputFile << endl;
+    for (auto&& analysis : processedFrameData) {
+        outputFile << analysis->timestamp;
+        for (unsigned i = 0; i < analysis->values.size(); ++i)
+            outputFile << "," << analysis->values[i];
+        outputFile << endl;
+    }
 
     return true;
 }
 
-static bool analyzeGrayscaleFrame(AVFrame* frame, const AVRational& timeBase)
+static void analyzeGrayscaleFrame(AVFrame* frame)
 {
     int remainingHeight = frame->height;
     int lineSize = frame->linesize[0];
     auto data = frame->data[0];
-    array<float, VerticalCellCount * HorizontalCellCount> cellMedians;
+
+    unique_ptr<FrameAnalysis> analysis(new FrameAnalysis);
+    analysis->timestamp = frame->best_effort_timestamp * av_q2d(videoTimeBase);
+    analysis->frameNumber = frame->coded_picture_number;
 
     for (unsigned y = 0; y < VerticalCellCount; ++y) {
         unsigned yOffset = frame->height - remainingHeight;
@@ -321,11 +398,12 @@ static bool analyzeGrayscaleFrame(AVFrame* frame, const AVRational& timeBase)
             remainingWidth -= xPixels;
 
             float median = cellMedian(data, lineSize, xOffset, xPixels, yOffset, yPixels);
-            cellMedians[y * HorizontalCellCount + x] = median;
+            analysis->values[y * HorizontalCellCount + x] = median;
         }
     }
 
-    return outputFrameAnalysis(frame, cellMedians.data(), cellMedians.size(), timeBase);
+    lock_guard<mutex> lock(processedFrameDataMutex);
+    processedFrameData.insert(std::move(analysis));
 }
 
 static bool outputGrayscaleFrame(AVFrame* frame, const char* filename)
