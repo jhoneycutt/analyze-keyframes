@@ -176,7 +176,7 @@ int main(int argc, const char* argv[])
     remove(FrameAnalysisCSVFile);
 
     unsigned threadCount = thread::hardware_concurrency();
-    threadCount = threadCount ? threadCount : 4;
+    threadCount = std::max<unsigned>(threadCount, 2) - 1;
     vector<thread> threads;
     for (unsigned i = 0; i < threadCount; ++i)
         threads.push_back(thread(workerThread));
