@@ -288,8 +288,7 @@ static void workerThread()
 
         if (frame)
             processKeyframe(frame.get());
-
-        if (processingComplete)
+        else if (processingComplete)
             return;
     }
 }
